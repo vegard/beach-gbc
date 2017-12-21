@@ -156,14 +156,73 @@ while len(tiles) > 256:
     tiles = collapse_similar(tiles)
     print len(tiles)
 
+# output the tile data in gameboy format
+# http://www.huderlem.com/demos/gameboy2bpp.html
+tilenos = {}
+with open('tiles.asm', 'w') as f:
+    for i, (t, n, c) in enumerate(tiles):
+        tilenos[t] = i
+
+        print >>f, "; tile %u" % (i, )
+
+        for j in range(8):
+            low  = sum(((t[8 * j + k] & 1) >> 0) << k for k in range(8))
+            high = sum(((t[8 * j + k] & 2) >> 1) << k for k in range(8))
+            print >>f, "db $%02x, $%02x" % (low, high)
+
+        print >>f
+
+print len(tilenos)
+
+#for t, n, c in tiles:
+#    assert t in tilenos
+
+#for t, im in tile_ims.iteritems():
+#    assert t in tilenos
+
+maps = []
 for i, frame in enumerate(frames):
     w, h = frame.size
 
+    map = []
     for y in range(0, h, 8):
         for x in range(0, w, 8):
             tile = frame.crop((x, y, x + 8, y + 8))
             t = tuple(tile.getdata())
-            tile = tile_ims[t]
+
+            while True:
+                tile = tile_ims[t]
+                t2 = tuple(tile.getdata())
+                if t2 == t:
+                    break
+
+                t = t2
+
             frame.paste(tile, (x, y))
 
+            if t in tilenos:
+                map.append(tilenos[t])
+            else:
+                print "warning: %r not in tilenos" % (t, )
+
     frame.save('output/%04u.gif' % i)
+    maps.append(map)
+
+# print out frame 0 as the initial map
+with open('maps.asm', 'w') as f:
+    print >>f, "frame_init:"
+
+    for tileno in maps[0]:
+        print >>f, "db $%02x" % (tileno, )
+
+    print >>f
+
+    for i, (prev, map) in enumerate(zip(maps, maps[1:] + maps[:1])):
+        print >>f, "frame%u:" % (i, )
+
+        for j, (tileno0, tileno1) in enumerate(zip(prev, map)):
+            if tileno0 != tileno1:
+                print >>f, "dw $%02x" % (j, )
+                print >>f, "db $%02x" % (tileno1, )
+
+        print >>f
