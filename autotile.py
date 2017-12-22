@@ -247,8 +247,13 @@ with open('maps.asm', 'w') as f:
             if t0_hi != t1_hi:
                 bank1.append((j, t1_hi))
 
-        def write_bank(bank):
-            print "frame %u has %u changes in bank" % (i, len(bank))
+        def write_bank(bank_i, bank):
+            #print "frame %u has %u changes in bank" % (i, len(bank))
+
+            print >>f, "; bank %u" % (bank_i, )
+            print >>f, "    ld a, %u" % (bank_i, )
+            print >>f, "    ldh [$4f], a"
+            #print >>f, "    ld hl, $9800"
 
             prev_j = 0
 
@@ -256,16 +261,21 @@ with open('maps.asm', 'w') as f:
                 # TODO: this encoding doesn't handle a change in the top-left tile (index 0)...
                 assert j - prev_j > 0
                 assert j - prev_j < 256
-                print >>f, "db $%02x, $%02x" % (j - prev_j, val)
+                #print >>f, "db $%02x, $%02x" % (j - prev_j, val)
+
+                #print >>f, "    ld b, 0"
+                #print >>f, "    ld c, $%02x" % (j - prev_j, )
+                #print >>f, "    add hl, bc"
+                print >>f, "    ld hl, $%04x" % (0x9800 + j, )
+                print >>f, "    ld a, $%02x" % (val, )
+                print >>f, "    ld [hl], a"
+
                 prev_j = j
 
-            print >>f, "db 0"
+        write_bank(0, bank0)
+        write_bank(1, bank1)
 
-        print >>f, "; bank 0"
-        write_bank(bank0)
-        print >>f, "; bank 1"
-        write_bank(bank1)
-
+        print >>f, "    ret"
         print >>f, "frame%u_end:" % (i, )
         print >>f
 

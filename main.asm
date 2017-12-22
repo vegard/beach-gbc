@@ -136,7 +136,7 @@ CART_POCKET_CAMERA EQU $FC
 CART_BANDAI_TAMA5 EQU $FD
 CART_HUC3 EQU $FE
 CART_HUC1_RAM_BATTERY EQU $FF
-DB CART_ROM_ONLY
+DB CART_MBC5
 
 ; $0148: Rom size.
 ROM_32K EQU $00
@@ -199,9 +199,10 @@ main:
     ldh [$40], a
 
     ; set CPU double speed (not that it will help us)
-    ld a, 1
-    ldh [$4d], a
-    stop
+    ; 
+    ;ld a, 1
+    ;ldh [$4d], a
+    ;stop
 
     ; initialize frame counter
     ld hl, frame_counter
@@ -301,62 +302,13 @@ draw_next_frame:
     inc hl
     ld d, [hl]
 
-    ; set vram bank 0
-    ld a, 0
-    ldh [$4f], a
-    ld hl, $9800
+    ; call (de)
+    ld hl, .done
+    push hl
+    push de
+    ret
 
-    ; copy frame info to bg map
-    ; de = source pointer into frame (each entry has byte 0 = offset, byte 1 = data)
-    ; hl = pointer to bg map destination
-.bank0_loop:
-    ; read offset
-    ld a, [de]
-    cp 0
-    inc de
-    jr z, .bank0_done
-
-    ; apply offset to hl
-    ld b, 0
-    ld c, a
-    add hl, bc
-
-    ; read + write value
-    ld a, [de]
-    inc de
-    ld [hl], a
-
-    jr .bank0_loop
-.bank0_done:
-
-    ; set vram bank 1
-    ld a, 1
-    ldh [$4f], a
-    ld hl, $9800
-
-    ; copy frame info to bg map
-    ; de = source pointer into frame (each entry has byte 0 = offset, byte 1 = data)
-    ; hl = pointer to bg map destination
-.bank1_loop:
-    ; read offset
-    ld a, [de]
-    cp 0
-    inc de
-    jr z, .bank1_done
-
-    ; apply offset to hl
-    ld b, 0
-    ld c, a
-    add hl, bc
-
-    ; read + write value
-    ld a, [de]
-    inc de
-    ld [hl], a
-
-    jr .bank1_loop
-.bank1_done:
-
+.done:
     ; increment frame counter
     ld hl, current_frame
     ld a, [hl]
@@ -425,4 +377,6 @@ joypad:
 INCLUDE "palette.asm"
 INCLUDE "tiles-0.asm"
 INCLUDE "tiles-1.asm"
+
+SECTION "maps", ROMX
 INCLUDE "maps.asm"
