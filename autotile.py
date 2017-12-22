@@ -152,33 +152,41 @@ def collapse_similar(tiles):
 
 tiles = [(t, n, entropy(t)) for t, n in tiles.iteritems()]
 
-while len(tiles) > 256:
+while len(tiles) > 384:
     tiles = collapse_similar(tiles)
     print len(tiles)
 
-# output the tile data in gameboy format
-# http://www.huderlem.com/demos/gameboy2bpp.html
 tilenos = {}
-with open('tiles.asm', 'w') as f:
-    for i, (t, n, c) in enumerate(tiles):
-        tilenos[t] = i
-
-        print >>f, "; tile %u" % (i, )
-
-        for j in range(8):
-            low  = sum(((t[8 * j + k] & 1) >> 0) << k for k in range(8))
-            high = sum(((t[8 * j + k] & 2) >> 1) << k for k in range(8))
-            print >>f, "db $%02x, $%02x" % (low, high)
-
-        print >>f
+for i, (t, n, c) in enumerate(tiles):
+    tilenos[t] = i
 
 print len(tilenos)
 
-#for t, n, c in tiles:
-#    assert t in tilenos
+# output the tile data in gameboy format
+# http://www.huderlem.com/demos/gameboy2bpp.html
+def write_tiles(bank):
+    start = bank * 256
+    end = bank * 256 + 256
 
-#for t, im in tile_ims.iteritems():
-#    assert t in tilenos
+    with open('tiles-%u.asm' % (bank, ), 'w') as f:
+        print >>f, "; tile bank %u" % (bank, )
+        print >>f, "tiles%u:" % (bank, )
+        print >>f
+
+        for i, (t, n, c) in enumerate(tiles[start:end]):
+            print >>f, "; tile %u" % (i, )
+
+            for j in range(8):
+                low  = sum(((t[8 * j + k] & 1) >> 0) << (7 - k) for k in range(8))
+                high = sum(((t[8 * j + k] & 2) >> 1) << (7 - k) for k in range(8))
+                print >>f, "db $%02x, $%02x" % (low, high)
+
+            print >>f
+
+        print >>f, "tiles%u_end:" % (bank, )
+
+for i in range((len(tiles) + 255) // 256):
+    write_tiles(i)
 
 maps = []
 for i, frame in enumerate(frames):
@@ -199,30 +207,71 @@ for i, frame in enumerate(frames):
                 t = t2
 
             frame.paste(tile, (x, y))
+            map.append(tilenos[t])
 
-            if t in tilenos:
-                map.append(tilenos[t])
-            else:
-                print "warning: %r not in tilenos" % (t, )
+        for x in range(w, 32 * 8, 8):
+            map.append(0)
 
     frame.save('output/%04u.gif' % i)
     maps.append(map)
 
 # print out frame 0 as the initial map
 with open('maps.asm', 'w') as f:
-    print >>f, "frame_init:"
-
+    print >>f, "; bank 0"
+    print >>f, "frame_init_0:"
     for tileno in maps[0]:
-        print >>f, "db $%02x" % (tileno, )
-
+        print >>f, "db $%02x" % (tileno & 255, )
+    print >>f, "frame_init_0_end:"
+    print >>f
+    print >>f, "; bank 1"
+    print >>f, "frame_init_1:"
+    for tileno in maps[0]:
+        print >>f, "db $%02x" % ((tileno > 255) << 3, )
+    print >>f, "frame_init_1_end:"
     print >>f
 
     for i, (prev, map) in enumerate(zip(maps, maps[1:] + maps[:1])):
         print >>f, "frame%u:" % (i, )
 
+        # find differences that need to be written in each bank
+        bank0 = []
+        bank1 = []
         for j, (tileno0, tileno1) in enumerate(zip(prev, map)):
-            if tileno0 != tileno1:
-                print >>f, "dw $%02x" % (j, )
-                print >>f, "db $%02x" % (tileno1, )
+            t0_lo = tileno0 & 255
+            t1_lo = tileno1 & 255
+            if t0_lo != t1_lo:
+                bank0.append((j, t1_lo))
 
+            t0_hi = (tileno0 > 256) << 3
+            t1_hi = (tileno1 > 256) << 3
+            if t0_hi != t1_hi:
+                bank1.append((j, t1_hi))
+
+        def write_bank(bank):
+            print "frame %u has %u changes in bank" % (i, len(bank))
+
+            prev_j = 0
+
+            for j, val in bank:
+                # TODO: this encoding doesn't handle a change in the top-left tile (index 0)...
+                assert j - prev_j > 0
+                assert j - prev_j < 256
+                print >>f, "db $%02x, $%02x" % (j - prev_j, val)
+                prev_j = j
+
+            print >>f, "db 0"
+
+        print >>f, "; bank 0"
+        write_bank(bank0)
+        print >>f, "; bank 1"
+        write_bank(bank1)
+
+        print >>f, "frame%u_end:" % (i, )
         print >>f
+
+    print >>f, "frames:"
+
+    for i, map in enumerate(maps):
+        print >>f, "dw frame%u" % (i, )
+
+    print >>f, "frames_end:"

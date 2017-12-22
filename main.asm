@@ -96,7 +96,7 @@ DS 4
 GBC_UNSUPPORTED EQU $00
 GBC_COMPATIBLE EQU $80
 GBC_EXCLUSIVE EQU $C0
-DB GBC_UNSUPPORTED
+DB GBC_EXCLUSIVE
 
 ; $0144 - $0145: "New" Licensee Code, a two character name.
 DB "OK"
@@ -181,17 +181,214 @@ Breakpoint: MACRO
     ld b, b
 ENDM
 
+; TODO: use labels and let rgbds allocate addresses
+frame_counter EQU $c000
+current_frame EQU $c004
+
 ; $0150: Code!
 main:
+    ; we have to wait until LY (LCDC Y-coordinate) >= 144 to
+    ; prevent hardware damage when disabling the LCD
+.ly_loop:
+    ldh a, [$44]
+    cp 144
+    jr c, .ly_loop
+
+    ; disable LCD
+    ld a, 0
+    ldh [$40], a
+
+    ; set CPU double speed (not that it will help us)
+    ld a, 1
+    ldh [$4d], a
+    stop
+
+    ; initialize frame counter
+    ld hl, frame_counter
+    ld a, 0
+    ld [hl], a
+
+    ; initialize current frame
+    ld hl, current_frame
+    ld a, 0
+    ld [hl], a
+
+    ; set palette
+    ld a, $80
+    ldh [$68], a
+    ld hl, palette
+    ld c, (palette_end - palette)
+.palette_loop:
+    ld a, [hl]
+    ldh [$69], a
+    inc hl
+    dec c
+    jr nz, .palette_loop
+
+    ; copy tiles into VRAM, bank 0
+    ld a, 0
+    ldh [$4f], a
+    ld hl, tiles0
+    ld de, $8000
+    ld bc, (256 + tiles0_end - tiles0)
+    call memcpy
+
+    ; copy tiles, bank 1
+    ld a, 1
+    ldh [$4f], a
+    ld hl, tiles1
+    ld de, $8000
+    ld bc, (256 + tiles1_end - tiles1)
+    call memcpy
+
+    ; copy initial map into VRAM
+    ld a, 0
+    ldh [$4f], a
+    ld hl, frame_init_0
+    ld de, $9800
+    ld bc, (256 + frame_init_0_end - frame_init_0)
+    call memcpy
+    ld a, 1
+    ldh [$4f], a
+    ld hl, frame_init_1
+    ld de, $9800
+    ld bc, (256 + frame_init_1_end - frame_init_1)
+    call memcpy
+
+    ; set LCD scroll
+    ld a, 16
+    ldh [$42], a
+    ld a, 8
+    ldh [$43], a
+
+    ; enable LCD
+    ld a, $90
+    ldh [$40], a
+
     ; enable vblank interrupts
     ldh a, [$ff]
     or $ff
     ldh [$ff], a
     ei
 
-.loop:
+.halt_loop:
+    ; wait for interrupt
+    ei
     halt
-    jr .loop
+    nop
+    di
+
+    ; check if we should advance to the next frame
+    ld hl, frame_counter
+    ld a, [hl]
+    cp 6
+    call nc, draw_next_frame
+
+    jr .halt_loop
+
+draw_next_frame:
+    ; reset frame counter
+    ld hl, frame_counter
+    ld a, 0
+    ld [hl], a
+
+    ; scroll
+    ;ldh a, [$42]
+    ;inc a
+    ;ldh [$42], a
+
+    ; get frame counter, leave pointer to frame in de
+    ld hl, current_frame
+    ld a, [hl]
+    add a, a
+    ld b, 0
+    ld c, a
+    ld hl, frames
+    add hl, bc
+
+    ld e, [hl]
+    inc hl
+    ld d, [hl]
+
+    ; set vram bank 0
+    ld a, 0
+    ldh [$4f], a
+    ld hl, $9800
+
+    ; copy frame info to bg map
+    ; de = source pointer into frame (each entry has byte 0 = offset, byte 1 = data)
+    ; hl = pointer to bg map destination
+.bank0_loop:
+    ; read offset
+    ld a, [de]
+    cp 0
+    inc de
+    jr z, .bank0_done
+
+    ; apply offset to hl
+    ld b, 0
+    ld c, a
+    add hl, bc
+
+    ; read + write value
+    ld a, [de]
+    inc de
+    ld [hl], a
+
+    jr .bank0_loop
+.bank0_done:
+
+    ; set vram bank 1
+    ld a, 1
+    ldh [$4f], a
+    ld hl, $9800
+
+    ; copy frame info to bg map
+    ; de = source pointer into frame (each entry has byte 0 = offset, byte 1 = data)
+    ; hl = pointer to bg map destination
+.bank1_loop:
+    ; read offset
+    ld a, [de]
+    cp 0
+    inc de
+    jr z, .bank1_done
+
+    ; apply offset to hl
+    ld b, 0
+    ld c, a
+    add hl, bc
+
+    ; read + write value
+    ld a, [de]
+    inc de
+    ld [hl], a
+
+    jr .bank1_loop
+.bank1_done:
+
+    ; increment frame counter
+    ld hl, current_frame
+    ld a, [hl]
+    inc a
+    cp 19 ; TODO: 18?
+    jr c, .save_frame_counter
+    ld a, 0
+.save_frame_counter:
+    ld [hl], a
+
+    ret
+
+memcpy:
+.loop:
+    ld a, [hl]
+    ld [de], a
+    inc hl
+    inc de
+    dec c ; assumes (bc > 0) initially
+    jr nz, .loop
+    dec b ; assumes (bc > 255) initially
+    jr nz, .loop
+    ret
 
 map_init:
     ld hl, $0000
@@ -200,6 +397,8 @@ map_init:
     ret
 
 draw:
+    ld hl, frame_counter
+    inc [hl]
     reti
 
 stat:
@@ -215,6 +414,11 @@ joypad:
     Breakpoint
     reti
 
+;
 ; data
-INCLUDE "tiles.asm"
+;
+
+INCLUDE "palette.asm"
+INCLUDE "tiles-0.asm"
+INCLUDE "tiles-1.asm"
 INCLUDE "maps.asm"
