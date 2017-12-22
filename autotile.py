@@ -188,6 +188,8 @@ def write_tiles(bank):
 for i in range((len(tiles) + 255) // 256):
     write_tiles(i)
 
+zero_tile = tilenos[tuple(0 for i in range(64))]
+
 maps = []
 for i, frame in enumerate(frames):
     w, h = frame.size
@@ -210,7 +212,7 @@ for i, frame in enumerate(frames):
             map.append(tilenos[t])
 
         for x in range(w, 32 * 8, 8):
-            map.append(0)
+            map.append(zero_tile)
 
     frame.save('output/%04u.gif' % i)
     maps.append(map)

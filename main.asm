@@ -259,7 +259,7 @@ main:
     ; set LCD scroll
     ld a, 16
     ldh [$42], a
-    ld a, 8
+    ld a, 0
     ldh [$43], a
 
     ; enable LCD
@@ -276,6 +276,56 @@ main:
     ; wait for interrupt
     halt
     nop
+
+    ; check for joypad events
+    ld a, $20
+    ldh [$00], a
+    ldh a, [$00]
+    ld b, a
+
+.down:
+    and a, $08
+    jr nz, .down_done
+    ldh a, [$42]
+    cp 16
+    jr nc, .down_done
+    inc a
+    ldh [$42], a
+.down_done:
+    ld a, b
+
+.up:
+    and a, $04
+    jr nz, .up_done
+    ldh a, [$42]
+    cp 1
+    jr c, .up_done
+    dec a
+    ldh [$42], a
+.up_done:
+    ld a, b
+
+.left:
+    and a, $02
+    jr nz, .left_done
+    ldh a, [$43]
+    cp 1
+    jr c, .left_done
+    dec a
+    ldh [$43], a
+.left_done:
+    ld a, b
+
+.right:
+    and a, $01
+    jr nz, .right_done
+    ldh a, [$43]
+    cp 96
+    jr nc, .right_done
+    inc a
+    ldh [$43], a
+.right_done:
+
     jr .halt_loop
 
 draw_next_frame:
@@ -367,7 +417,7 @@ serial:
     reti
 
 joypad:
-    Breakpoint
+
     reti
 
 ;
