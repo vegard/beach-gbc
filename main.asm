@@ -273,17 +273,8 @@ main:
 
 .halt_loop:
     ; wait for interrupt
-    ei
     halt
     nop
-    di
-
-    ; check if we should advance to the next frame
-    ld hl, frame_counter
-    ld a, [hl]
-    cp 6
-    call nc, draw_next_frame
-
     jr .halt_loop
 
 draw_next_frame:
@@ -397,8 +388,21 @@ map_init:
     ret
 
 draw:
+    ; check if we should advance to the next frame
     ld hl, frame_counter
-    inc [hl]
+    ld a, [hl]
+    inc a
+    ld [hl], a
+    cp 6
+    jr c, .ret
+
+    ; reset counter
+    ld a, 0
+    ld [hl], a
+
+    call draw_next_frame
+
+.ret:
     reti
 
 stat:
